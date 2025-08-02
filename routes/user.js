@@ -1,5 +1,5 @@
 const { Router } = require("express");
-const userMiddleware = require("../middleware/user");
+const userMiddleware = require("../middlewares/user");
 const { Admin, User, Course } = require("../DB");
 const {JWT_SECRET} = require("../config");
 const router = Router();
