@@ -45,11 +45,12 @@ router.post('/signin', async (req, res) => {
 });
 
 router.get('/courses', async (req, res) => {
-    // Implement listing all courses logic
-    const response = await Course.findOne({});
-    res.json({
-        courses: response
-    })
+  try {
+    const response = await Course.find({});
+    res.json({ courses: response });
+  } catch (err) {
+    res.status(500).json({ message: 'Failed to fetch courses' });
+  }
 });
 
 router.post('/courses/:courseId', userMiddleware, async (req, res) => {
