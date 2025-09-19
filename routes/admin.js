@@ -1,81 +1,83 @@
 const { Router } = require("express");
 const adminMiddleware = require("../middlewares/admin");
-const { Admin, User, Course } = require("../DB");
-const {JWT_SECRET} = require("../config");
-const router = Router();
+const { Admin, Course } = require("../DB"); 
+const { JWT_SECRET } = require("../config");
 const jwt = require("jsonwebtoken");
+const bcrypt = require('bcryptjs');
+
+const router = Router();
 
 // Admin Routes
 router.post('/signup', async (req, res) => {
-    // Implement admin signup logic
-    const username = req.body.username;
-    const password = req.body.password;
+    try {
+        const { username, password } = req.body;
+        
+        // Check if admin already exists
+        const existingAdmin = await Admin.findOne({ username });
+        if (existingAdmin) {
+            return res.status(409).json({ message: 'Admin with this username already exists' });
+        }
 
-    // check if a user with this username already exists
-    await Admin.create({
-        username: username,
-        password: password
-    })
-
-    res.json({
-        message: 'Admin created successfully'
-    })
-});
-
-router.post('/signin', async (req, res) => {
-    // Implement admin signup logic
-    const username = req.body.username;
-    const password = req.body.password;
-    console.log(JWT_SECRET);
-
-    const user = await User.find({
-        username,
-        password
-    })
-    if (user) {
-        const token = jwt.sign({
-            username
-        }, JWT_SECRET);
-
-        res.json({
-            token
-        })
-    } else {
-        res.status(411).json({
-            message: "Incorrect email and pass"
-        })
+        // Create new admin
+        const newAdmin = await Admin.create({ username, password });
+        res.status(201).json({
+            message: 'Admin created successfully',
+            adminId: newAdmin._id
+        });
+    } catch (err) {
+        res.status(500).json({ message: 'Failed to create admin', error: err.message });
     }
 });
 
+router.post('/signin', async (req, res) => {
+    try {
+        const { username, password } = req.body;
+        const admin = await Admin.findOne({ username });
+
+        if (!admin) {
+            return res.status(401).json({ message: "Incorrect username or password" });
+        }
+
+        const isMatch = await bcrypt.compare(password, admin.password);
+        if (!isMatch) {
+            return res.status(401).json({ message: "Incorrect username or password" });
+        }
+
+        const token = jwt.sign({ username, role: 'admin' }, JWT_SECRET, { expiresIn: '1h' });
+        res.json({ token });
+
+    } catch(err) {
+        res.status(500).json({ message: 'Failed to sign in', error: err.message });
+    }
+});
 
 router.post('/courses', adminMiddleware, async (req, res) => {
-    // Implement course creation logic
-    const title = req.body.title;
-    const description = req.body.description;
-    const imageLink = req.body.imageLink;
-    const price = req.body.price;
-    // zod
-    const newCourse = await Course.create({
-        title,
-        description,
-        imageLink,
-        price
-    })
+    try {
+        const { title, description, imageLink, price, published } = req.body;
+        const newCourse = await Course.create({
+            title,
+            description,
+            imageLink,
+            price,
+            published: published || false
+        });
 
-    res.json({
-        message: 'Course created successfully', courseId: newCourse._id
-    })
+        res.status(201).json({
+            message: 'Course created successfully',
+            courseId: newCourse._id
+        });
+    } catch (err) {
+        res.status(500).json({ message: 'Failed to create course', error: err.message });
+    }
 });
 
 router.get('/courses', adminMiddleware, async (req, res) => {
-    // Implement fetching all courses logic
-    const response = await Course.find({});
-
-    res.json({
-        courses: response
-    })
-
+    try {
+        const response = await Course.find({});
+        res.json({ courses: response });
+    } catch (err) {
+        res.status(500).json({ message: 'Failed to fetch courses', error: err.message });
+    }
 });
-
 
 module.exports = router;

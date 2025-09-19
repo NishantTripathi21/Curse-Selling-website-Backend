@@ -1,47 +1,51 @@
 const { Router } = require("express");
 const userMiddleware = require("../middlewares/user");
-const { Admin, User, Course } = require("../DB");
-const {JWT_SECRET} = require("../config");
-const router = Router();
+const { User, Course } = require("../DB");
+const { JWT_SECRET } = require("../config");
 const jwt = require("jsonwebtoken");
-// User Routes
-router.post('/signup', (req, res) => {
-    // Implement user signup logic
-    const username = req.body.username;
-    const password = req.body.password;
-    User.create({
-        username, 
-        password
-    })
-    res.json({
-        message: "User created successfully"
-    })
+const bcrypt = require('bcryptjs');
 
+const router = Router();
+
+// User Routes
+router.post('/signup', async (req, res) => {
+    try {
+        const { username, password } = req.body;
+        
+        // Check if user already exists
+        const existingUser = await User.findOne({ username });
+        if (existingUser) {
+            return res.status(409).json({ message: 'User with this username already exists' });
+        }
+        
+        // Create new user
+        const newUser = await User.create({ username, password });
+        res.status(201).json({ message: "User created successfully", userId: newUser._id });
+    } catch (err) {
+        res.status(500).json({ message: 'Failed to create user', error: err.message });
+    }
 });
 
 router.post('/signin', async (req, res) => {
-    // Implement user signin logic
-    const username = req.body.username;
-        const password = req.body.password;
-        console.log(JWT_SECRET);
-    
-        const user = await User.find({
-            username,
-            password
-        })
-        if (user) {
-            const token = jwt.sign({
-                username
-            }, JWT_SECRET);
-    
-            res.json({
-                token
-            })
-        } else {
-            res.status(411).json({
-                message: "Incorrect email and pass"
-            })
+    try {
+        const { username, password } = req.body;
+        const user = await User.findOne({ username });
+
+        if (!user) {
+            return res.status(401).json({ message: "Incorrect username or password" });
         }
+
+        const isMatch = await bcrypt.compare(password, user.password);
+        if (!isMatch) {
+            return res.status(401).json({ message: "Incorrect username or password" });
+        }
+
+        const token = jwt.sign({ username, role: 'user' }, JWT_SECRET, { expiresIn: '1h' });
+        res.json({ token });
+        
+    } catch(err) {
+        res.status(500).json({ message: 'Failed to sign in', error: err.message });
+    }
 });
 
 router.get('/courses', async (req, res) => {
@@ -49,44 +53,38 @@ router.get('/courses', async (req, res) => {
     const response = await Course.find({});
     res.json({ courses: response });
   } catch (err) {
-    res.status(500).json({ message: 'Failed to fetch courses' });
+    res.status(500).json({ message: 'Failed to fetch courses', error: err.message });
   }
 });
 
 router.post('/courses/:courseId', userMiddleware, async (req, res) => {
-    // Implement course purchase logic
-    const courseId = req.params.courseId;
-    const username = req.headers.username;
+    try {
+        const courseId = req.params.courseId;
+        const username = req.username; 
 
-    await User.updateOne({
-        username: username
-    }, {
-        "$push": {
-            purchasedCourses: courseId
-        }
-    })
-    res.json({
-        message: "Purchase complete!"
-    })
-
+        await User.updateOne({
+            username: username
+        }, {
+            "$push": {
+                purchasedCourses: courseId
+            }
+        });
+        res.json({ message: "Purchase complete!" });
+    } catch (err) {
+        res.status(500).json({ message: 'Failed to purchase course', error: err.message });
+    }
 });
 
-router.get('/purchasedCourses', userMiddleware,async (req, res) => {
-    // Implement fetching purchased courses logic
-    const user = await User.findOne({
-        username: req.username
-    });
-
-    console.log(user.purchasedCourses);
-    const courses = await Course.find({
-        _id: {
-            "$in": user.purchasedCourses
+router.get('/purchasedCourses', userMiddleware, async (req, res) => {
+    try {
+        const user = await User.findOne({ username: req.username }).populate('purchasedCourses');
+        if (!user) {
+            return res.status(404).json({ message: "User not found" });
         }
-    });
-
-    res.json({
-        courses: courses
-    })
+        res.json({ purchasedCourses: user.purchasedCourses });
+    } catch (err) {
+        res.status(500).json({ message: 'Failed to fetch purchased courses', error: err.message });
+    }
 });
 
-module.exports = router
+module.exports = router;
